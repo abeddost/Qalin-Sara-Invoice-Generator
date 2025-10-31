@@ -17,9 +17,7 @@
     bankName: '',
     bankIban: '',
     bankBic: '',
-    taxId: '',
-    defaultVat: 19,
-    autoKleinunternehmerNote: true
+    taxId: ''
   };
 
   const elements = {
@@ -34,16 +32,12 @@
     customerName: document.getElementById('customerName'),
     customerAddress: document.getElementById('customerAddress'),
     customerPhone: document.getElementById('customerPhone'),
-    vatPercent: document.getElementById('vatPercent'),
 
     // items
     addItemBtn: document.getElementById('addItemBtn'),
     itemsBody: document.getElementById('itemsBody'),
 
     // totals
-    subtotalDisplay: document.getElementById('subtotalDisplay'),
-    vatRateDisplay: document.getElementById('vatRateDisplay'),
-    vatAmountDisplay: document.getElementById('vatAmountDisplay'),
     grandTotalDisplay: document.getElementById('grandTotalDisplay'),
 
     // actions
@@ -58,8 +52,7 @@
     resetSettingsBtn: document.getElementById('resetSettingsBtn'),
     // bank fields removed from UI
     taxId: document.getElementById('taxId'),
-    defaultVat: document.getElementById('defaultVat'),
-    autoKleinunternehmerNote: document.getElementById('autoKleinunternehmerNote')
+    // no VAT-related settings anymore
   };
 
   function loadSettings() {
@@ -141,7 +134,7 @@
   }
 
   function newEmptyItem() {
-    return { description: '', quantity: 1, unitPrice: 0 };
+    return { description: '', area: 0, pricePerSqm: 0 };
   }
 
   function sanitizeNumber(value) {
@@ -150,12 +143,9 @@
     return n;
   }
 
-  function computeTotals(items, vatPercent) {
-    const sub = items.reduce((acc, it) => acc + sanitizeNumber(it.quantity) * sanitizeNumber(it.unitPrice), 0);
-    const vatRate = sanitizeNumber(vatPercent) / 100;
-    const vatAmount = sub * vatRate;
-    const total = sub + vatAmount;
-    return { subtotal: sub, vatAmount, total };
+  function computeTotals(items) {
+    const sub = items.reduce((acc, it) => acc + sanitizeNumber(it.area) * sanitizeNumber(it.pricePerSqm), 0);
+    return { subtotal: sub, total: sub };
   }
 
   function renderItems(items) {
@@ -164,13 +154,13 @@
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="border p-1">
-          <input data-idx="${index}" data-field="description" type="text" class="w-full px-2 py-1" placeholder="Produkt/Dienstleistung" value="${escapeHtml(item.description)}" />
+          <input data-idx="${index}" data-field="description" type="text" class="w-full px-2 py-1" placeholder="Artikel" value="${escapeHtml(item.description)}" />
         </td>
         <td class="border p-1 text-right">
-          <input data-idx="${index}" data-field="quantity" type="number" step="1" min="0" class="w-full px-2 py-1 text-right" value="${String(item.quantity)}" />
+          <input data-idx="${index}" data-field="area" type="number" step="0.01" min="0" class="w-full px-2 py-1 text-right" value="${String(item.area)}" />
         </td>
         <td class="border p-1 text-right">
-          <input data-idx="${index}" data-field="unitPrice" type="number" step="0.01" min="0" class="w-full px-2 py-1 text-right" value="${String(item.unitPrice)}" />
+          <input data-idx="${index}" data-field="pricePerSqm" type="number" step="0.01" min="0" class="w-full px-2 py-1 text-right" value="${String(item.pricePerSqm)}" />
         </td>
         <td class="border p-1 text-right" data-role="lineTotal"></td>
         <td class="border p-1 text-center">
@@ -184,7 +174,7 @@
   function updateLineTotals(items) {
     const rows = elements.itemsBody.querySelectorAll('tr');
     rows.forEach((tr, idx) => {
-      const amount = sanitizeNumber(items[idx].quantity) * sanitizeNumber(items[idx].unitPrice);
+      const amount = sanitizeNumber(items[idx].area) * sanitizeNumber(items[idx].pricePerSqm);
       const cell = tr.querySelector('[data-role="lineTotal"]');
       if (cell) cell.textContent = numberFmt.format(amount);
     });
@@ -206,9 +196,9 @@
       if (!idxInput) return;
       const index = Number(idxInput.getAttribute('data-idx'));
       const description = tr.querySelector('input[data-field="description"]').value || '';
-      const quantity = sanitizeNumber(tr.querySelector('input[data-field="quantity"]').value);
-      const unitPrice = sanitizeNumber(tr.querySelector('input[data-field="unitPrice"]').value);
-      items.push({ description, quantity, unitPrice, index });
+      const area = sanitizeNumber(tr.querySelector('input[data-field="area"]').value);
+      const pricePerSqm = sanitizeNumber(tr.querySelector('input[data-field="pricePerSqm"]').value);
+      items.push({ description, area, pricePerSqm, index });
     });
     // Ensure order by index
     items.sort((a, b) => a.index - b.index);
@@ -221,7 +211,6 @@
       customerName: elements.customerName.value.trim(),
       customerAddress: elements.customerAddress.value.trim(),
       customerPhone: elements.customerPhone.value.trim(),
-      vatPercent: sanitizeNumber(elements.vatPercent.value),
       items
     };
   }
@@ -233,7 +222,6 @@
     elements.customerName.value = state.customerName || '';
     elements.customerAddress.value = state.customerAddress || '';
     elements.customerPhone.value = state.customerPhone || '';
-    elements.vatPercent.value = String(state.vatPercent ?? 19);
     renderItems(state.items && state.items.length ? state.items : [newEmptyItem()]);
     updateTotalsAndUI();
   }
@@ -241,10 +229,7 @@
   function updateTotalsAndUI() {
     const draft = getFormState();
     updateLineTotals(draft.items);
-    const totals = computeTotals(draft.items, draft.vatPercent);
-    elements.subtotalDisplay.textContent = currencyFmt.format(totals.subtotal);
-    elements.vatRateDisplay.textContent = numberFmt.format(draft.vatPercent).replace('\u00A0', '');
-    elements.vatAmountDisplay.textContent = currencyFmt.format(totals.vatAmount);
+    const totals = computeTotals(draft.items);
     elements.grandTotalDisplay.textContent = currencyFmt.format(totals.total);
     saveDraft(draft);
   }
@@ -301,110 +286,31 @@
     });
   }
 
-  function kleinunternehmerNote(settings) {
-    if (!settings.autoKleinunternehmerNote) return '';
-    return 'Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.';
-  }
-
-  function renderPreview() {
-    const draft = getFormState();
-    const settings = loadSettings();
-    const totals = computeTotals(draft.items, draft.vatPercent);
-
-    // Basic HTML preview (approximation of PDF)
-    const linesHtml = draft.items.map((it, i) => {
-      const lineTotal = sanitizeNumber(it.quantity) * sanitizeNumber(it.unitPrice);
-      return `
-        <tr>
-          <td class="border p-2 align-top">${escapeHtml(it.description)}</td>
-          <td class="border p-2 text-right">${numberFmt.format(sanitizeNumber(it.quantity))}</td>
-          <td class="border p-2 text-right">${numberFmt.format(sanitizeNumber(it.unitPrice))}</td>
-          <td class="border p-2 text-right">${numberFmt.format(lineTotal)}</td>
-        </tr>
-      `;
-    }).join('');
-
-    const note = draft.vatPercent === 0 ? kleinunternehmerNote(settings) : '';
-
-    elements.previewRoot.innerHTML = `
-      <div class="flex items-start justify-between mb-6">
-        <div>
-          <img src="logo.png" alt="Logo" class="h-16 w-16 object-contain mb-2" />
-          <div class="text-sm">
-            <div><strong>Qalin Sara</strong></div>
-            <div>Industriestraße 17</div>
-            <div>65474 Bischofsheim</div>
-            <div>Tel: 0176 72465789</div>
-          </div>
-        </div>
-        <div class="text-right text-sm">
-          <div><strong>Rechnung Nr.:</strong> ${escapeHtml(draft.invoiceNumber || '')}</div>
-          <div><strong>Rechnungsdatum:</strong> ${escapeHtml(draft.issueDate || '')}</div>
-          <div><strong>Liefer-/Leistungsdatum:</strong> ${escapeHtml(draft.serviceDate || '')}</div>
-        </div>
-      </div>
-
-      <div class="mb-4">
-        <div class="font-semibold">Rechnung an</div>
-        <div>${escapeHtml(draft.customerName || '')}</div>
-        <div>${escapeHtml(draft.customerAddress || '')}</div>
-        <div>${escapeHtml(draft.customerPhone || '')}</div>
-      </div>
-
-      <table class="w-full border text-sm mb-4">
-        <thead class="bg-gray-100">
-          <tr>
-            <th class="border p-2 text-left">Beschreibung</th>
-            <th class="border p-2 text-right">Menge</th>
-            <th class="border p-2 text-right">Einzelpreis (€)</th>
-            <th class="border p-2 text-right">Betrag (€)</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${linesHtml}
-        </tbody>
-      </table>
-
-      <div class="flex justify-end mb-8">
-        <div class="w-72">
-          <div class="flex justify-between text-sm mb-1"><span>Zwischensumme</span><span>${currencyFmt.format(totals.subtotal)}</span></div>
-          <div class="flex justify-between text-sm mb-1"><span>MwSt (${numberFmt.format(draft.vatPercent)}%)</span><span>${currencyFmt.format(totals.vatAmount)}</span></div>
-          <div class="flex justify-between text-base font-semibold"><span>Gesamtsumme</span><span>${currencyFmt.format(totals.total)}</span></div>
-        </div>
-      </div>
-
-      <div class="text-xs text-gray-700">
-        ${settings.taxId ? `<div>Steuernummer/USt-IdNr.: ${escapeHtml(settings.taxId)}</div>` : ''}
-        ${note ? `<div class="mt-2">${escapeHtml(note)}</div>` : ''}
-      </div>
-    `;
-  }
+  // Preview functionality removed - PDF generation is the primary output
 
   function buildPdfDefinition(logoDataUrl) {
     const draft = getFormState();
     const settings = loadSettings();
-    const totals = computeTotals(draft.items, draft.vatPercent);
+    const totals = computeTotals(draft.items);
 
     const body = [
       [
-        { text: 'Beschreibung', style: 'tableHeader' },
-        { text: 'Menge', style: 'tableHeader', alignment: 'right' },
-        { text: 'Einzelpreis (€)', style: 'tableHeader', alignment: 'right' },
-        { text: 'Betrag (€)', style: 'tableHeader', alignment: 'right' }
+        { text: 'Artikel', style: 'tableHeader' },
+        { text: 'Fläche (m²)', style: 'tableHeader', alignment: 'right' },
+        { text: '€/m²', style: 'tableHeader', alignment: 'right' },
+        { text: 'Gesamt (€)', style: 'tableHeader', alignment: 'right' }
       ]
     ];
 
     draft.items.forEach((it, i) => {
-      const lineTotal = sanitizeNumber(it.quantity) * sanitizeNumber(it.unitPrice);
+      const lineTotal = sanitizeNumber(it.area) * sanitizeNumber(it.pricePerSqm);
       body.push([
         { text: it.description || '', margin: [0, 2, 0, 2] },
-        { text: numberFmt.format(sanitizeNumber(it.quantity)), alignment: 'right' },
-        { text: numberFmt.format(sanitizeNumber(it.unitPrice)), alignment: 'right' },
+        { text: numberFmt.format(sanitizeNumber(it.area)), alignment: 'right' },
+        { text: numberFmt.format(sanitizeNumber(it.pricePerSqm)), alignment: 'right' },
         { text: numberFmt.format(lineTotal), alignment: 'right' }
       ]);
     });
-
-    const note = draft.vatPercent === 0 ? kleinunternehmerNote(settings) : '';
 
     const docDefinition = {
       pageSize: 'A4',
@@ -458,8 +364,6 @@
               table: {
                 widths: [120, 90],
                 body: [
-                  ['Zwischensumme', currencyFmt.format(totals.subtotal)],
-                  [`MwSt (${numberFmt.format(draft.vatPercent)}%)`, currencyFmt.format(totals.vatAmount)],
                   [{ text: 'Gesamtsumme', bold: true }, { text: currencyFmt.format(totals.total), bold: true }]
                 ]
               },
@@ -469,7 +373,7 @@
         },
         { text: '\n' },
         settings.taxId ? { text: `Steuernummer/USt-IdNr.: ${settings.taxId}` } : {},
-        note ? { text: `\n${note}` } : {}
+        {}
       ],
       styles: {
         sectionHeader: { bold: true, fontSize: 12, margin: [0, 0, 0, 4] },
@@ -501,8 +405,8 @@
       const items = draft.items && draft.items.length ? draft.items : [];
       if (Number.isFinite(idx) && items[idx]) {
         if (field === 'description') items[idx].description = t.value;
-        if (field === 'quantity') items[idx].quantity = sanitizeNumber(t.value);
-        if (field === 'unitPrice') items[idx].unitPrice = sanitizeNumber(t.value);
+        if (field === 'area') items[idx].area = sanitizeNumber(t.value);
+        if (field === 'pricePerSqm') items[idx].pricePerSqm = sanitizeNumber(t.value);
         saveDraft(draft);
         updateTotalsAndUI();
       }
@@ -517,7 +421,7 @@
       }
     });
 
-    ['invoiceNumber','issueDate','serviceDate','customerName','customerAddress','customerPhone','vatPercent'].forEach((id) => {
+    ['invoiceNumber','issueDate','serviceDate','customerName','customerAddress','customerPhone'].forEach((id) => {
       const el = elements[id];
       if (el) el.addEventListener('input', updateTotalsAndUI);
       if (id === 'issueDate') el.addEventListener('change', () => {
@@ -540,8 +444,6 @@
     elements.openSettingsBtn.addEventListener('click', () => {
       const s = loadSettings();
       elements.taxId.value = s.taxId;
-      elements.defaultVat.value = s.defaultVat;
-      elements.autoKleinunternehmerNote.checked = !!s.autoKleinunternehmerNote;
       elements.settingsModal.classList.remove('hidden');
       elements.settingsModal.classList.add('flex');
     });
@@ -553,21 +455,14 @@
       saveSettings({ ...DEFAULT_SETTINGS });
       const s = loadSettings();
       elements.taxId.value = s.taxId;
-      elements.defaultVat.value = s.defaultVat;
-      elements.autoKleinunternehmerNote.checked = !!s.autoKleinunternehmerNote;
     });
     elements.saveSettingsBtn.addEventListener('click', () => {
       const s = {
-        taxId: elements.taxId.value.trim(),
-        defaultVat: sanitizeNumber(elements.defaultVat.value),
-        autoKleinunternehmerNote: !!elements.autoKleinunternehmerNote.checked
+        taxId: elements.taxId.value.trim()
       };
       // Preserve any existing bank fields in storage without UI
       const prev = loadSettings();
       saveSettings({ ...prev, ...s });
-      if (!elements.vatPercent.value) {
-        elements.vatPercent.value = String(s.defaultVat);
-      }
       elements.settingsModal.classList.add('hidden');
       elements.settingsModal.classList.remove('flex');
       // preview removed
@@ -592,7 +487,6 @@
       customerName: '',
       customerAddress: '',
       customerPhone: '',
-      vatPercent: settings.defaultVat ?? 19,
       items: [newEmptyItem()]
     };
   }

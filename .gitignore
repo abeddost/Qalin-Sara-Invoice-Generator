@@ -1,0 +1,33 @@
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Environment files (if any)
+.env
+.env.local
+
+# Build outputs (if any)
+dist/
+build/
+
+# Optional: Exclude any personal data or sensitive files
+# Uncomment if you have sensitive files
+# config.js
+# secrets.json
+
