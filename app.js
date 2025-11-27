@@ -32,6 +32,7 @@
     customerName: document.getElementById('customerName'),
     customerAddress: document.getElementById('customerAddress'),
     customerPhone: document.getElementById('customerPhone'),
+    paymentMethod: document.getElementById('paymentMethod'),
 
     // items
     addItemBtn: document.getElementById('addItemBtn'),
@@ -39,6 +40,8 @@
 
     // totals
     grandTotalDisplay: document.getElementById('grandTotalDisplay'),
+    anzahlung: document.getElementById('anzahlung'),
+    restbetragDisplay: document.getElementById('restbetragDisplay'),
 
     // actions
     downloadPdfBtn: document.getElementById('downloadPdfBtn'),
@@ -143,9 +146,11 @@
     return n;
   }
 
-  function computeTotals(items) {
+  function computeTotals(items, anzahlung = 0) {
     const sub = items.reduce((acc, it) => acc + sanitizeNumber(it.area) * sanitizeNumber(it.pricePerSqm), 0);
-    return { subtotal: sub, total: sub };
+    const anzahlungValue = sanitizeNumber(anzahlung);
+    const restbetrag = Math.max(0, sub - anzahlungValue);
+    return { subtotal: sub, total: sub, anzahlung: anzahlungValue, restbetrag };
   }
 
   function renderItems(items) {
@@ -211,6 +216,8 @@
       customerName: elements.customerName.value.trim(),
       customerAddress: elements.customerAddress.value.trim(),
       customerPhone: elements.customerPhone.value.trim(),
+      paymentMethod: elements.paymentMethod ? elements.paymentMethod.value : 'Bar',
+      anzahlung: elements.anzahlung ? sanitizeNumber(elements.anzahlung.value) : 0,
       items
     };
   }
@@ -222,6 +229,12 @@
     elements.customerName.value = state.customerName || '';
     elements.customerAddress.value = state.customerAddress || '';
     elements.customerPhone.value = state.customerPhone || '';
+    if (elements.paymentMethod) {
+      elements.paymentMethod.value = state.paymentMethod || 'Bar';
+    }
+    if (elements.anzahlung) {
+      elements.anzahlung.value = state.anzahlung || 0;
+    }
     renderItems(state.items && state.items.length ? state.items : [newEmptyItem()]);
     updateTotalsAndUI();
   }
@@ -229,8 +242,11 @@
   function updateTotalsAndUI() {
     const draft = getFormState();
     updateLineTotals(draft.items);
-    const totals = computeTotals(draft.items);
+    const totals = computeTotals(draft.items, draft.anzahlung);
     elements.grandTotalDisplay.textContent = currencyFmt.format(totals.total);
+    if (elements.restbetragDisplay) {
+      elements.restbetragDisplay.textContent = currencyFmt.format(totals.restbetrag);
+    }
     saveDraft(draft);
   }
 
@@ -291,7 +307,7 @@
   function buildPdfDefinition(logoDataUrl) {
     const draft = getFormState();
     const settings = loadSettings();
-    const totals = computeTotals(draft.items);
+    const totals = computeTotals(draft.items, draft.anzahlung);
 
     const body = [
       [
@@ -363,15 +379,23 @@
             {
               table: {
                 widths: [120, 90],
-                body: [
-                  [{ text: 'Gesamtsumme', bold: true }, { text: currencyFmt.format(totals.total), bold: true }]
-                ]
+                body: (function() {
+                  const rows = [
+                    [{ text: 'Gesamtsumme', bold: true }, { text: currencyFmt.format(totals.total), bold: true, alignment: 'right' }]
+                  ];
+                  if (totals.anzahlung > 0) {
+                    rows.push([{ text: 'Anzahlung', bold: false }, { text: currencyFmt.format(totals.anzahlung), alignment: 'right' }]);
+                    rows.push([{ text: 'Restbetrag', bold: true }, { text: currencyFmt.format(totals.restbetrag), bold: true, alignment: 'right' }]);
+                  }
+                  return rows;
+                })()
               },
               layout: 'noBorders'
             }
           ]
         },
         { text: '\n' },
+        draft.paymentMethod ? { text: `Zahlungsart: ${draft.paymentMethod}` } : {},
         settings.taxId ? { text: `Steuernummer/USt-IdNr.: ${settings.taxId}` } : {},
         {}
       ],
@@ -436,6 +460,16 @@
       });
     });
 
+    // Anzahlung input listener
+    if (elements.anzahlung) {
+      elements.anzahlung.addEventListener('input', updateTotalsAndUI);
+    }
+
+    // Payment method listener
+    if (elements.paymentMethod) {
+      elements.paymentMethod.addEventListener('change', updateTotalsAndUI);
+    }
+
     elements.downloadPdfBtn.addEventListener('click', downloadPdf);
 
     // preview controls removed
@@ -487,6 +521,8 @@
       customerName: '',
       customerAddress: '',
       customerPhone: '',
+      paymentMethod: 'Bar',
+      anzahlung: 0,
       items: [newEmptyItem()]
     };
   }
