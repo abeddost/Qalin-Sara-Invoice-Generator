@@ -10,6 +10,13 @@ const getInvoiceTotal = (inv) => {
   }, 0)
 }
 
+const getInvoiceArea = (inv) => {
+  return (inv.items || []).reduce((sum, item) => {
+    const area = parseFloat(item.area) || 0
+    return sum + area
+  }, 0)
+}
+
 const getMonthLabel = (yyyyMm) => {
   if (!yyyyMm) return ''
   const [y, m] = yyyyMm.split('-')
@@ -72,12 +79,56 @@ export const DashboardPage = () => {
   const stats = useMemo(() => {
     const total = filteredInvoices.length
     const revenue = filteredInvoices.reduce((sum, inv) => sum + getInvoiceTotal(inv), 0)
+    const totalSqm = filteredInvoices.reduce((sum, inv) => sum + getInvoiceArea(inv), 0)
+
     const currentMonth = new Date().toISOString().slice(0, 7)
-    const thisMonthCount = filteredInvoices.filter(inv => {
+    let thisMonthCount = 0
+    let sqmThisMonth = 0
+
+    filteredInvoices.forEach(inv => {
       const d = inv.issue_date || inv.created_at?.slice(0, 10) || ''
-      return d.startsWith(currentMonth)
-    }).length
-    return { total, thisMonth: thisMonthCount, revenue }
+      if (d && d.startsWith(currentMonth)) {
+        thisMonthCount += 1
+        sqmThisMonth += getInvoiceArea(inv)
+      }
+    })
+
+    return { total, thisMonth: thisMonthCount, revenue, totalSqm, sqmThisMonth }
+  }, [filteredInvoices])
+
+  const sqmByDay = useMemo(() => {
+    const map = {}
+    filteredInvoices.forEach(inv => {
+      const d = inv.issue_date || inv.created_at?.slice(0, 10)
+      if (!d) return
+      if (!map[d]) {
+        map[d] = { date: d, sqm: 0, count: 0 }
+      }
+      map[d].sqm += getInvoiceArea(inv)
+      map[d].count += 1
+    })
+
+    return Object.values(map)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 30)
+  }, [filteredInvoices])
+
+  const sqmByMonth = useMemo(() => {
+    const map = {}
+    filteredInvoices.forEach(inv => {
+      const d = inv.issue_date || inv.created_at?.slice(0, 10)
+      if (!d) return
+      const key = d.slice(0, 7)
+      if (!map[key]) {
+        map[key] = { month: key, sqm: 0, count: 0 }
+      }
+      map[key].sqm += getInvoiceArea(inv)
+      map[key].count += 1
+    })
+
+    return Object.values(map)
+      .sort((a, b) => b.month.localeCompare(a.month))
+      .slice(0, 12)
   }, [filteredInvoices])
 
   const recentInvoices = useMemo(() => filteredInvoices.slice(0, 10), [filteredInvoices])
@@ -97,6 +148,13 @@ export const DashboardPage = () => {
         <div className="text-center py-12">Laden...</div>
       </AdminLayout>
     )
+  }
+
+  const formatSqm = (value) => {
+    return (value || 0).toLocaleString('de-DE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })
   }
 
   return (
@@ -198,7 +256,7 @@ export const DashboardPage = () => {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <Link to="/dashboard/invoices" className="bg-white rounded-lg shadow-sm border p-6 hover:border-brand-teal transition block">
           <div className="flex items-center justify-between">
             <div>
@@ -214,7 +272,7 @@ export const DashboardPage = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600 mb-1">
-                {filterType === 'thisMonth' ? 'In diesem Monat' : filterType !== 'all' ? 'Im Zeitraum' : 'Diesen Monat'}
+                {filterType === 'thisMonth' ? 'Rechnungen in diesem Monat' : filterType !== 'all' ? 'Rechnungen im Zeitraum' : 'Rechnungen diesen Monat'}
               </p>
               <p className="text-3xl font-bold text-brand-teal">{stats.thisMonth}</p>
             </div>
@@ -233,10 +291,27 @@ export const DashboardPage = () => {
             <div className="text-4xl">💰</div>
           </div>
         </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600 mb-1">
+                {filterType !== 'all' ? 'Fläche (m², Filter)' : 'Fläche (m²) gesamt'}
+              </p>
+              <p className="text-3xl font-bold text-brand-charcoal">
+                {formatSqm(stats.totalSqm)} m²
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Diesen Monat: {formatSqm(stats.sqmThisMonth)} m²
+              </p>
+            </div>
+            <div className="text-4xl">📐</div>
+          </div>
+        </div>
       </div>
 
       {/* Recent Invoices */}
-      <div className="bg-white rounded-lg shadow-sm border">
+      <div className="bg-white rounded-lg shadow-sm border mb-8">
         <div className="px-6 py-4 border-b flex justify-between items-center flex-wrap gap-3">
           <h2 className="text-lg font-semibold">
             {filterType !== 'all' ? 'Rechnungen (gefiltert)' : 'Letzte Rechnungen'}
@@ -304,6 +379,79 @@ export const DashboardPage = () => {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Analytics: m² per day / month */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="px-6 py-4 border-b">
+            <h2 className="text-lg font-semibold">Fläche pro Tag (m²)</h2>
+            <p className="text-xs text-gray-500 mt-1">Letzte 30 Tage im aktuellen Filter.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Datum</th>
+                  <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">m²</th>
+                  <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Rechnungen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sqmByDay.length === 0 ? (
+                  <tr>
+                    <td colSpan="3" className="px-6 py-8 text-center text-gray-500">
+                      Keine Daten im aktuellen Filter
+                    </td>
+                  </tr>
+                ) : (
+                  sqmByDay.map(row => (
+                    <tr key={row.date} className="border-t hover:bg-gray-50">
+                      <td className="px-6 py-3 text-sm">{row.date}</td>
+                      <td className="px-6 py-3 text-sm text-right">{formatSqm(row.sqm)} m²</td>
+                      <td className="px-6 py-3 text-sm text-right">{row.count}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="px-6 py-4 border-b">
+            <h2 className="text-lg font-semibold">Fläche pro Monat (m²)</h2>
+            <p className="text-xs text-gray-500 mt-1">Letzte 12 Monate im aktuellen Filter.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Monat</th>
+                  <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">m²</th>
+                  <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Rechnungen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sqmByMonth.length === 0 ? (
+                  <tr>
+                    <td colSpan="3" className="px-6 py-8 text-center text-gray-500">
+                      Keine Daten im aktuellen Filter
+                    </td>
+                  </tr>
+                ) : (
+                  sqmByMonth.map(row => (
+                    <tr key={row.month} className="border-t hover:bg-gray-50">
+                      <td className="px-6 py-3 text-sm">{getMonthLabel(row.month)}</td>
+                      <td className="px-6 py-3 text-sm text-right">{formatSqm(row.sqm)} m²</td>
+                      <td className="px-6 py-3 text-sm text-right">{row.count}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </AdminLayout>

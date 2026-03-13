@@ -1,8 +1,21 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { AdminLayout } from '../layouts/AdminLayout'
 import { supabase } from '../lib/supabase'
 import { formatCurrency } from '../utils/invoiceNumber'
+
+const getInvoiceTotal = (inv) => {
+  return (inv.items || []).reduce((sum, item) => {
+    return sum + ((item.area || 0) * (item.pricePerSqm || 0))
+  }, 0)
+}
+
+const getInvoiceArea = (inv) => {
+  return (inv.items || []).reduce((sum, item) => {
+    const area = parseFloat(item.area) || 0
+    return sum + area
+  }, 0)
+}
 
 export const InvoicesListPage = () => {
   const [invoices, setInvoices] = useState([])
@@ -70,12 +83,6 @@ export const InvoicesListPage = () => {
     }
   }
 
-  const getInvoiceTotal = (inv) => {
-    return (inv.items || []).reduce((sum, item) => {
-      return sum + ((item.area || 0) * (item.pricePerSqm || 0))
-    }, 0)
-  }
-
   const activeInvoices = invoices.filter(inv => !inv.deleted_at)
   const deletedInvoices = invoices.filter(inv => !!inv.deleted_at)
 
@@ -98,6 +105,34 @@ export const InvoicesListPage = () => {
 
     return true
   })
+
+  const sqmPerCustomer = useMemo(() => {
+    const map = {}
+
+    filteredInvoices.forEach(inv => {
+      const name = inv.customer_name || 'Unbekannt'
+      if (!map[name]) {
+        map[name] = {
+          customer: name,
+          totalSqm: 0,
+          invoiceCount: 0,
+          totalRevenue: 0
+        }
+      }
+      map[name].totalSqm += getInvoiceArea(inv)
+      map[name].invoiceCount += 1
+      map[name].totalRevenue += getInvoiceTotal(inv)
+    })
+
+    return Object.values(map).sort((a, b) => b.totalSqm - a.totalSqm)
+  }, [filteredInvoices])
+
+  const formatSqm = (value) => {
+    return (value || 0).toLocaleString('de-DE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })
+  }
 
   if (loading) {
     return (
@@ -203,7 +238,7 @@ export const InvoicesListPage = () => {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden mb-8">
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead className="bg-gray-50">
@@ -212,6 +247,7 @@ export const InvoicesListPage = () => {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Kunde</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Datum</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Status</th>
+                <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Fläche (m²)</th>
                 <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Betrag</th>
                 <th className="px-6 py-3 text-center text-sm font-medium text-gray-700">Aktionen</th>
               </tr>
@@ -219,13 +255,14 @@ export const InvoicesListPage = () => {
             <tbody>
               {filteredInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
                     Keine Rechnungen gefunden
                   </td>
                 </tr>
               ) : (
                 filteredInvoices.map((invoice) => {
                   const total = getInvoiceTotal(invoice)
+                  const sqm = getInvoiceArea(invoice)
 
                   return (
                     <tr key={invoice.id} className="border-t hover:bg-gray-50">
@@ -240,6 +277,9 @@ export const InvoicesListPage = () => {
                         }`}>
                           {invoice.status === 'submitted' ? 'Eingereicht' : 'Entwurf'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-right">
+                        {formatSqm(sqm)} m²
                       </td>
                       <td className="px-6 py-4 text-sm text-right font-medium">
                         {formatCurrency(total)}
@@ -280,6 +320,54 @@ export const InvoicesListPage = () => {
                     </tr>
                   )
                 })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Customer analytics */}
+      <div className="bg-white rounded-lg shadow-sm border">
+        <div className="px-6 py-4 border-b flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Kunden-Analyse (m²)</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Basierend auf den aktuell gefilterten Rechnungen.
+            </p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Kunde</th>
+                <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">m² gesamt</th>
+                <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Anzahl Rechnungen</th>
+                <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Umsatz</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sqmPerCustomer.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
+                    Keine Daten im aktuellen Filter
+                  </td>
+                </tr>
+              ) : (
+                sqmPerCustomer.map((row) => (
+                  <tr key={row.customer} className="border-t hover:bg-gray-50">
+                    <td className="px-6 py-3 text-sm">{row.customer}</td>
+                    <td className="px-6 py-3 text-sm text-right">
+                      {formatSqm(row.totalSqm)} m²
+                    </td>
+                    <td className="px-6 py-3 text-sm text-right">
+                      {row.invoiceCount}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-right">
+                      {formatCurrency(row.totalRevenue)}
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
