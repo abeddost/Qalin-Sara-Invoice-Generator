@@ -2,32 +2,53 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { getNextInvoiceNumber } from '../utils/invoiceNumber'
 
+const DRAFT_KEY = 'invoice_draft'
+
+const defaultInvoice = () => ({
+  invoice_number: '',
+  issue_date: new Date().toISOString().split('T')[0],
+  service_date: new Date().toISOString().split('T')[0],
+  customer_name: '',
+  customer_address: '',
+  customer_phone: '',
+  payment_method: 'Bar',
+  anzahlung: 0,
+  items: [{ description: '', area: 0, pricePerSqm: 0 }],
+  status: 'draft'
+})
+
 export const useInvoiceForm = (invoiceId = null) => {
-  const [invoice, setInvoice] = useState({
-    invoice_number: '',
-    issue_date: new Date().toISOString().split('T')[0],
-    service_date: new Date().toISOString().split('T')[0],
-    customer_name: '',
-    customer_address: '',
-    customer_phone: '',
-    payment_method: 'Bar',
-    anzahlung: 0,
-    items: [{ description: '', area: 0, pricePerSqm: 0 }],
-    status: 'draft'
-  })
+  const [invoice, setInvoice] = useState(defaultInvoice)
   
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
-  // Load existing invoice
+  // Load existing invoice or restore/initialize a new one
   useEffect(() => {
     if (invoiceId) {
       loadInvoice(invoiceId)
     } else {
-      initializeNewInvoice()
+      const saved = localStorage.getItem(DRAFT_KEY)
+      if (saved) {
+        try {
+          setInvoice(JSON.parse(saved))
+        } catch {
+          localStorage.removeItem(DRAFT_KEY)
+          initializeNewInvoice()
+        }
+      } else {
+        initializeNewInvoice()
+      }
     }
   }, [invoiceId])
+
+  // Persist draft to localStorage on every change (new invoices only)
+  useEffect(() => {
+    if (!invoiceId) {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(invoice))
+    }
+  }, [invoice, invoiceId])
 
   const loadInvoice = async (id) => {
     setLoading(true)
@@ -141,16 +162,18 @@ export const useInvoiceForm = (invoiceId = null) => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
+      const now = new Date().toISOString()
       const invoiceData = {
         ...invoice,
         created_by: user.id,
-        status: 'submitted'
+        status: 'submitted',
+        submitted_at: now
       }
 
       if (invoiceId) {
         const { error } = await supabase
           .from('invoices')
-          .update({ status: 'submitted' })
+          .update({ status: 'submitted', submitted_at: now })
           .eq('id', invoiceId)
         
         if (error) throw error
@@ -162,6 +185,7 @@ export const useInvoiceForm = (invoiceId = null) => {
           .single()
         
         if (error) throw error
+        localStorage.removeItem(DRAFT_KEY)
         return data.id
       }
     } catch (err) {
@@ -173,18 +197,8 @@ export const useInvoiceForm = (invoiceId = null) => {
   }
 
   const clearForm = () => {
-    setInvoice({
-      invoice_number: '',
-      issue_date: new Date().toISOString().split('T')[0],
-      service_date: new Date().toISOString().split('T')[0],
-      customer_name: '',
-      customer_address: '',
-      customer_phone: '',
-      payment_method: 'Bar',
-      anzahlung: 0,
-      items: [{ description: '', area: 0, pricePerSqm: 0 }],
-      status: 'draft'
-    })
+    localStorage.removeItem(DRAFT_KEY)
+    setInvoice(defaultInvoice())
     initializeNewInvoice()
   }
 

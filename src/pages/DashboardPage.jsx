@@ -333,6 +333,7 @@ export const DashboardPage = () => {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Kunde</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Datum</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Status</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Erstellt am</th>
                 <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Betrag</th>
                 <th className="px-6 py-3 text-center text-sm font-medium text-gray-700">Aktion</th>
               </tr>
@@ -340,7 +341,7 @@ export const DashboardPage = () => {
             <tbody>
               {recentInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
                     Keine Rechnungen vorhanden
                   </td>
                 </tr>
@@ -361,6 +362,11 @@ export const DashboardPage = () => {
                         }`}>
                           {invoice.status === 'submitted' ? 'Eingereicht' : 'Entwurf'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm">
+                        {invoice.submitted_at
+                          ? new Date(invoice.submitted_at).toLocaleString('de-DE')
+                          : '—'}
                       </td>
                       <td className="px-6 py-4 text-sm text-right font-medium">
                         {formatCurrency(total)}

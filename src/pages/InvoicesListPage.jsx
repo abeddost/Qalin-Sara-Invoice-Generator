@@ -247,6 +247,7 @@ export const InvoicesListPage = () => {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Kunde</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Datum</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Status</th>
+                <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Erstellt am</th>
                 <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Fläche (m²)</th>
                 <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Betrag</th>
                 <th className="px-6 py-3 text-center text-sm font-medium text-gray-700">Aktionen</th>
@@ -255,7 +256,7 @@ export const InvoicesListPage = () => {
             <tbody>
               {filteredInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
                     Keine Rechnungen gefunden
                   </td>
                 </tr>
@@ -277,6 +278,11 @@ export const InvoicesListPage = () => {
                         }`}>
                           {invoice.status === 'submitted' ? 'Eingereicht' : 'Entwurf'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm">
+                        {invoice.submitted_at
+                          ? new Date(invoice.submitted_at).toLocaleString('de-DE')
+                          : '—'}
                       </td>
                       <td className="px-6 py-4 text-sm text-right">
                         {formatSqm(sqm)} m²
